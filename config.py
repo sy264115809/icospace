@@ -40,6 +40,10 @@ class Config(object):
         'github': {
             'id': os.environ.get('OAUTH_GITHUB_ID'),
             'secret': os.environ.get('OAUTH_GITHUB_SECRET')
+        },
+        'google': {
+            'id': os.environ.get('OAUTH_GOOGLE_ID'),
+            'secret': os.environ.get('OAUTH_GOOGLE_SECRET')
         }
     }
 

@@ -21,7 +21,11 @@ class User(db.Model, UserMixin):
     github_name = db.Column(db.String(32))
     github_email = db.Column(db.String(64))
 
-    api_token = db.Column(db.String(64))
+    google_id = db.Column(db.String(32), unique = True)
+    google_name = db.Column(db.String(32))
+    google_email = db.Column(db.String(64))
+
+    api_token = db.Column(db.String(512))
 
     login_count = db.Column(db.Integer, default = 0)
     last_login_at = db.Column(db.DateTime)
@@ -33,7 +37,7 @@ class User(db.Model, UserMixin):
     updated_at = db.Column(db.DateTime, default = datetime.now, onupdate = datetime.now)
 
     def __init__(self, password = '', **kwargs):
-        self.sign_in_count = 0
+        self.login_count = 0
         if password:
             self.set_password(password)
         super(User, self).__init__(**kwargs)
@@ -54,6 +58,10 @@ class User(db.Model, UserMixin):
         self.generate_api_token()
         db.session.commit()
         return self.api_token
+
+    def logout(self):
+        self.api_token = ''
+        db.session.commit()
 
     def set_password(self, pwd):
         self.password_hash = generate_password_hash(pwd)
