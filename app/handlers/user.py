@@ -16,12 +16,12 @@ duplicate_pattern = re.compile("Duplicate entry '(?P<value>.+)' for key '(?P<fil
 user_endpoint = Blueprint('user', __name__, url_prefix = '/users')
 
 
-def key_activate_email_code(email):
+def __key_activate_email_code(email):
     return 'activate:email:{}'.format(email)
 
 
-def send_activate_email(email):
-    key = key_activate_email_code(email)
+def _send_activate_email(email):
+    key = __key_activate_email_code(email)
     activate_code = shortuuid.uuid()
 
     redis_cli.setex(key, timedelta(days = 1), activate_code)
@@ -32,7 +32,7 @@ def send_activate_email(email):
     send_email(email, u'邮箱激活', 'activate_email.html', activate_url = activate_url)
 
 
-def get_user_by_email(email):
+def _get_user_by_email(email):
     user = UserModel.query.filter_by(email = email).first()
     if user is None:
         abort(404, message = 'user is not exists')
@@ -40,25 +40,25 @@ def get_user_by_email(email):
     return user
 
 
-def key_user_oauth_state(provider_name, user):
+def __key_user_oauth_state(provider_name, user):
     return 'oauth:state:{}:{}'.format(provider_name, user.id)
 
 
-def set_user_oauth_state(provider_name):
+def _set_user_oauth_state(provider_name):
     if current_user.is_authenticated:
         state = shortuuid.uuid()
-        redis_cli.setex(key_user_oauth_state(provider_name, current_user), timedelta(minutes = 1), state)
+        redis_cli.setex(__key_user_oauth_state(provider_name, current_user), timedelta(minutes = 1), state)
         return state
     return ''
 
 
-def get_user_oauth_state(provider_name):
+def _get_user_oauth_state(provider_name):
     if current_user.is_authenticated:
-        return redis_cli.get(key_user_oauth_state(provider_name, current_user))
+        return redis_cli.get(__key_user_oauth_state(provider_name, current_user))
     return ''
 
 
-def login_user(user):
+def _login_user(user):
     session['api_token'] = user.login()
 
 
@@ -81,7 +81,7 @@ def activate_email():
     if user.activated:
         return '用户已激活'
 
-    activated = args['c'] == redis_cli.get(key_activate_email_code(email))
+    activated = args['c'] == redis_cli.get(__key_activate_email_code(email))
 
     if activated:
         user.activated = True
@@ -121,7 +121,7 @@ class Signup(Resource):
                 }
                 abort(409, message = "duplicate value '{value}' for key '{filed}'".format(**groups), **groups)
 
-        send_activate_email(user.email)
+        _send_activate_email(user.email)
 
         return {'id': user.id}, 201
 
@@ -130,7 +130,7 @@ class Signup(Resource):
 def login_by_oauth(provider_name):
     provider = OAuthSignIn.get_provider(provider_name)
     if provider:
-        return provider.authorize(state = set_user_oauth_state(provider_name))
+        return provider.authorize(state = _set_user_oauth_state(provider_name))
     else:
         return abort(404)
 
@@ -144,7 +144,7 @@ def login_by_github_callback():
         return 'github 授权失败'
 
     if current_user.is_authenticated:
-        if get_user_oauth_state('github') != state:
+        if _get_user_oauth_state('github') != state:
             return '错误的用户，授权失败'
 
         user = UserModel.query.filter_by(github_id = info.get('id')).first()
@@ -170,7 +170,7 @@ def login_by_github_callback():
                 github_name = info.get('name'),
             )
             db.session.add(user)
-        login_user(user)
+        _login_user(user)
 
         return '登录成功'
 
@@ -184,7 +184,7 @@ def login_by_google_callback():
         return 'google 授权失败'
 
     if current_user.is_authenticated:
-        if get_user_oauth_state('google') != state:
+        if _get_user_oauth_state('google') != state:
             return '错误的用户，授权失败'
 
         user = UserModel.query.filter_by(google_id = info.get('id')).first()
@@ -208,7 +208,7 @@ def login_by_google_callback():
                 google_name = info.get('name'),
             )
             db.session.add(user)
-        login_user(user)
+        _login_user(user)
 
         return '登录成功'
 
@@ -220,11 +220,11 @@ class ResendActiveEmil(Resource):
         parser.add_argument('email', required = True)
         args = parser.parse_args()
 
-        user = get_user_by_email(args['email'])
+        user = _get_user_by_email(args['email'])
         if user.activated:
             abort(403, message = 'user is already activated')
 
-        send_activate_email(user.email)
+        _send_activate_email(user.email)
         return {}, 200
 
 
@@ -238,7 +238,7 @@ class Login(Resource):
 
 
 
-        user = get_user_by_email(args['email'])
+        user = _get_user_by_email(args['email'])
 
         if args['email'] != user.email or not user.check_password(args['password']):
             abort(401)
@@ -246,7 +246,7 @@ class Login(Resource):
         if not user.activated:
             abort(403, message = "user is not activated")
 
-        login_user(user)
+        _login_user(user)
         return {}, 200
 
 
