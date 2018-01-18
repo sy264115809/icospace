@@ -3,13 +3,15 @@ from datetime import timedelta
 import re
 import base64
 import shortuuid
-from flask import Blueprint, session, render_template, url_for
+from flask import Blueprint, session, render_template, url_for, request, current_app
 from flask_login import login_required, current_user
 from flask_restful import Resource, reqparse, abort, fields, marshal_with
 from app import db, api, redis_cli, login_manager
 from handlers.helper.oauth import OAuthSignIn
+from handlers.helper.rate_limiter import Limiter
 from app.models.user import User as UserModel
 from app.utils.mail import send_email
+from app.utils.captcha import generate_captcha
 
 duplicate_pattern = re.compile("Duplicate entry '(?P<value>.+)' for key '(?P<filed>.+)'")
 
@@ -60,6 +62,21 @@ def _get_user_oauth_state(provider_name):
 
 def _login_user(user):
     session['api_token'] = user.login()
+
+
+def __key_captcha(code):
+    return 'captcha:img_code:{}'.format(code)
+
+
+def _generate_captcha(email):
+    b64_img, code = generate_captcha()
+    redis_cli.setex(__key_captcha(code), current_app.config['LOGIN_CAPTCHA_EXPIRES_TIMEDELTA'], email)
+    return b64_img
+
+
+def _verify_captcha(email, code):
+    val = redis_cli.getset(__key_captcha(code), None)
+    return email == val
 
 
 @user_endpoint.route('/email/active', methods = ['GET'])
@@ -234,20 +251,57 @@ class Login(Resource):
         parser = reqparse.RequestParser()
         parser.add_argument('email', required = True)
         parser.add_argument('password', required = True)
+        parser.add_argument('code')
         args = parser.parse_args()
 
+        ip_captcha_limiter = Limiter(
+            redis_cli = redis_cli,
+            keyfunc = lambda: 'login:limit:captcha:ip:{}'.format(request.remote_addr),
+            limit = current_app.config['LOGIN_MAX_ATTEMPT_TIMES_PER_IP'],
+            period = current_app.config['LOGIN_MAX_ATTEMPT_TIMEDELTA_PER_IP']
+        )
 
+        email_captcha_limiter = Limiter(
+            redis_cli = redis_cli,
+            keyfunc = lambda: 'login:limit:captcha:email:{}'.format(args['email']),
+            limit = current_app.config['LOGIN_MAX_ATTEMPT_TIMES_PER_USER'],
+            period = current_app.config['LOGIN_MAX_ATTEMPT_TIMEDELTA_PER_USER']
+        )
 
-        user = _get_user_by_email(args['email'])
+        login_block_limiter = Limiter(
+            redis_cli = redis_cli,
+            keyfunc = lambda: 'login:limit:block:email:{}'.format(args['email']),
+            limit = current_app.config['LOGIN_BLOCK_AFTER_MAX_ATTEMPT_TIMES'],
+            period = current_app.config['LOGIN_BLOCK_TIMEDELTA_PER_USER']
+        )
 
-        if args['email'] != user.email or not user.check_password(args['password']):
-            abort(401)
+        should_carry_captcha = False
+        if args['code']:
+            should_carry_captcha = True
+            if not _verify_captcha(args['email'], args['code']):
+                abort(400, message = '验证码错误', captcha = _generate_captcha(args['email']))
+        elif not ip_captcha_limiter.touch() or not email_captcha_limiter.touch():
+            abort(429, captcha = _generate_captcha(args['email']))
+
+        if not login_block_limiter.touch():
+            abort(403, message = '尝试登录次数过多，请稍后尝试')
+
+        user = UserModel.query.filter_by(email = args['email']).first()
+        if user is None or not user.check_password(args['password']):
+            payload = {'message': '用户名或密码错误'}
+            if should_carry_captcha:
+                payload['captcha'] = _generate_captcha(args['email'])
+            abort(400, **payload)
 
         if not user.activated:
-            abort(403, message = "user is not activated")
+            abort(403, message = "用户未激活")
 
         _login_user(user)
-        return {}, 200
+        ip_captcha_limiter.reset()
+        email_captcha_limiter.reset()
+        login_block_limiter.reset()
+
+        return {'message': '登录成功'}, 200
 
 
 @api.resource('/logout')

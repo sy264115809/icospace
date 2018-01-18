@@ -20,6 +20,14 @@ class Config(object):
     SQLALCHEMY_RECORD_QUERIES = True
     # SQLALCHEMY_ECHO = True
 
+    LOGIN_MAX_ATTEMPT_TIMES_PER_USER = 5  # when user try to login touch the max times, should provide captcha
+    LOGIN_MAX_ATTEMPT_TIMEDELTA_PER_USER = timedelta(minutes = 5)
+    LOGIN_MAX_ATTEMPT_TIMES_PER_IP = 10  # when user try to login touch the max times, should provide captcha
+    LOGIN_MAX_ATTEMPT_TIMEDELTA_PER_IP = timedelta(minutes = 5)
+    LOGIN_BLOCK_AFTER_MAX_ATTEMPT_TIMES = 10  # after user trying to login touch the max times should be block
+    LOGIN_BLOCK_TIMEDELTA_PER_USER = timedelta(minutes = 10)
+    LOGIN_CAPTCHA_EXPIRES_TIMEDELTA = timedelta(minutes = 1)
+
     MAIL_SERVER = 'smtp.qq.com'
     MAIL_PORT = 465
     MAIL_USE_SSL = True
