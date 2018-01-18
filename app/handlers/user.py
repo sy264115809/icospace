@@ -245,6 +245,15 @@ class ResendActiveEmil(Resource):
         return {}, 200
 
 
+@api.resource('/captcha')
+class Captcha(Resource):
+    def get(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('email', required = True)
+        args = parser.parse_args()
+        return {'captcha': _generate_captcha(args['email'])}, 200
+
+
 @api.resource('/login')
 class Login(Resource):
     def post(self):
