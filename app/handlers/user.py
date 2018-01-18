@@ -7,8 +7,8 @@ from flask import Blueprint, session, render_template, url_for, request, current
 from flask_login import login_required, current_user
 from flask_restful import Resource, reqparse, abort, fields, marshal_with
 from app import db, api, redis_cli, login_manager
-from handlers.helper.oauth import OAuthSignIn
-from handlers.helper.rate_limiter import Limiter
+from app.handlers.helper.oauth import OAuthSignIn
+from app.handlers.helper.rate_limiter import Limiter
 from app.models.user import User as UserModel
 from app.utils.mail import send_email
 from app.utils.captcha import generate_captcha
@@ -32,6 +32,26 @@ def _send_activate_email(email):
                            c = activate_code,
                            _external = True)
     send_email(email, u'邮箱激活', 'activate_email.html', activate_url = activate_url)
+
+
+def __key_reset_password_code(email):
+    return 'password:reset:email:{}'.format(email)
+
+
+def _send_reset_password_email(email):
+    key = __key_reset_password_code(email)
+    reset_password_code = shortuuid.uuid()
+
+    redis_cli.setex(key, timedelta(hours = 1), reset_password_code)
+    reset_password_url = url_for('user.reset_password_page',
+                                 e = base64.urlsafe_b64encode(email),
+                                 c = reset_password_code,
+                                 _external = True)
+    send_email(email, u'重置密码', 'reset_password.html', reset_password_url = reset_password_url)
+
+
+def _verify_reset_password_code(email, code):
+    return code == redis_cli.getset(__key_reset_password_code(email), None)
 
 
 def _get_user_by_email(email):
@@ -319,6 +339,83 @@ class Logout(Resource):
         if current_user.is_authenticated:
             current_user.logout()
         return {}, 200
+
+
+@api.resource('/password')
+class Password(Resource):
+    @login_required
+    def put(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('old_password', required = True)
+        parser.add_argument('new_password', required = True)
+        parser.add_argument('new_password2', required = True)
+        args = parser.parse_args()
+
+        if args['new_password'].strip() != args['new_password2'].strip():
+            abort(400, message = '新密码输入不一致')
+
+        if not current_user.check_password(args['old_password']):
+            abort(403, message = '旧密码错误')
+
+        current_user.set_password(args['new_password'].strip())
+        db.session.commit()
+        return {'message': '更新密码成功'}, 200
+
+    def delete(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('email', required = True)
+        args = parser.parse_args()
+
+        user = UserModel.query.filter_by(email = args['email']).first()
+        if user is None:
+            abort(404, message = '请确认您是否是通过第三方账号登录的')
+
+        _send_reset_password_email(args['email'])
+        return {}, 200
+
+
+@user_endpoint.route('/password/reset', methods = ['get'])
+def reset_password_page():
+    parser = reqparse.RequestParser()
+    parser.add_argument('e', location = 'args', type = str, required = True)
+    parser.add_argument('c', location = 'args', type = str, required = True)
+    args = parser.parse_args()
+
+    try:
+        email = base64.urlsafe_b64decode(args['e'])
+    except Exception as e:
+        return '无效链接'
+
+    user = UserModel.query.filter_by(email = email).first()
+    if user is None:
+        return '无效链接'
+
+    return render_template('reset_password.html', email = email, code = args['c'])
+
+
+@api.resource('/password/reset', endpoint='reset_password')
+class ResetPassword(Resource):
+    def post(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('email', required = True)
+        parser.add_argument('new_password', required = True)
+        parser.add_argument('new_password2', required = True)
+        parser.add_argument('code', required = True)
+        args = parser.parse_args()
+
+        if not _verify_reset_password_code(args['email'], args['code']):
+            abort(400, message = '页面已失效请重新申请重置密码')
+
+        if args['new_password'].strip() != args['new_password2'].strip():
+            abort(400, message = '新密码输入不一致')
+
+        user = UserModel.query.filter_by(email = args['email']).first()
+        if user is None:
+            abort(404, message = '请确认您是否是通过第三方账号登录的')
+
+        user.set_password(args['new_password'].strip())
+        db.session.commit()
+        return {'message': '重置成功'}, 200
 
 
 user_fields = {
