@@ -345,6 +345,27 @@ class Profile(Resource):
     def get(self):
         return current_user
 
+    @marshal_with(user_fields)
+    @login_required
+    def patch(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('nickname')
+        parser.add_argument('first_name')
+        parser.add_argument('last_name')
+        parser.add_argument('mobile')
+        args = parser.parse_args()
+
+        should_save = False
+        for key, value in args.items():
+            if hasattr(current_user, key):
+                setattr(current_user, key, value)
+                should_save = True
+
+        if should_save:
+            db.session.commit()
+
+        return current_user
+
 
 @login_manager.request_loader
 def load_user_from_session(request):
