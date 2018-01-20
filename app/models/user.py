@@ -33,6 +33,8 @@ class User(db.Model, UserMixin):
     activated = db.Column(db.Boolean, default = False)
     disabled = db.Column(db.Boolean, default = False)
 
+    is_admin = db.Column(db.Boolean, default = False)
+
     created_at = db.Column(db.DateTime, default = datetime.now)
     updated_at = db.Column(db.DateTime, default = datetime.now, onupdate = datetime.now)
 
