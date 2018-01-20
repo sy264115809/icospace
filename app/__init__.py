@@ -88,6 +88,7 @@ def create_app(config_name):
 
     from app.handlers.user import user_endpoint
     app.register_blueprint(user_endpoint)
+    import app.handlers.tournament as tourment_handler
 
     api.init_app(app)
 
