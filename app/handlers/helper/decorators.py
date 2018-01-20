@@ -11,6 +11,6 @@ def admin_required(func):
         elif not current_user.is_admin:
             abort(401)
         else:
-            func(*args, **kwargs)
+            return func(*args, **kwargs)
 
     return decorator
