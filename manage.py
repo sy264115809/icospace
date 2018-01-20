@@ -14,6 +14,7 @@ from app import create_app, db
 from flask import url_for
 from flask_script import Manager, Shell
 from flask_migrate import Migrate, MigrateCommand
+from urllib.parse import unquote
 
 app = create_app(os.getenv('ICO_CONFIG') or 'default')
 
@@ -36,11 +37,11 @@ def list_routes():
 
         methods = ','.join(rule.methods)
         url = url_for(rule.endpoint, **options)
-        line = urllib.unquote("{:50s} {:20s} {}".format(rule.endpoint, methods, url))
+        line = unquote("{:50s} {:20s} {}".format(rule.endpoint, methods, url))
         output.append(line)
 
     for line in sorted(output):
-        print line
+        print(line)
 
 
 manager.add_command("shell", Shell(make_context = make_shell_context))
