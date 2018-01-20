@@ -1,5 +1,6 @@
 # coding=utf8
 import traceback
+import re
 from flask import Flask, json, current_app, request, abort
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy, get_debug_queries
@@ -10,6 +11,8 @@ from flask_mail import Mail
 import redis
 
 from config import config, Config
+
+duplicate_pattern = re.compile("Duplicate entry '(?P<value>.+)' for key '(?P<filed>.+)'")
 
 db = SQLAlchemy()
 mail = Mail()
@@ -67,6 +70,13 @@ def create_app(config_name):
             traceback.print_exc()
 
             if isinstance(e, SQLAlchemyError):
+                match = duplicate_pattern.search(e.args[0])
+                if match:
+                    groups = {
+                        'value': match.group('value'),
+                        'filed': match.group('filed')
+                    }
+                    abort(409, ({'message': "duplicate value '{value}' for key '{filed}'".format(**groups), **groups}))
                 db.session.rollback()
 
             abort(500)
@@ -76,7 +86,7 @@ def create_app(config_name):
 
     make_error_handler()
 
-    from handlers.user import user_endpoint
+    from app.handlers.user import user_endpoint
     app.register_blueprint(user_endpoint)
 
     api.init_app(app)

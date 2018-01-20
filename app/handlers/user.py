@@ -1,6 +1,5 @@
 # coding=utf8
 from datetime import timedelta
-import re
 import base64
 import shortuuid
 from flask import Blueprint, session, render_template, url_for, request, current_app
@@ -12,8 +11,6 @@ from app.handlers.helper.rate_limiter import Limiter
 from app.models.user import User as UserModel
 from app.utils.mail import send_email
 from app.utils.captcha import generate_captcha
-
-duplicate_pattern = re.compile("Duplicate entry '(?P<value>.+)' for key '(?P<filed>.+)'")
 
 user_endpoint = Blueprint('user', __name__, url_prefix = '/users')
 
@@ -145,18 +142,7 @@ class Signup(Resource):
             last_name = args['last_name']
         )
         db.session.add(user)
-        try:
-            db.session.commit()
-        except Exception as e:
-            match = duplicate_pattern.search(e.message)
-            if match:
-                db.session.rollback()
-
-                groups = {
-                    'value': match.group('value'),
-                    'filed': match.group('filed')
-                }
-                abort(409, message = "duplicate value '{value}' for key '{filed}'".format(**groups), **groups)
+        db.session.commit()
 
         _send_activate_email(user.email)
 
@@ -393,7 +379,7 @@ def reset_password_page():
     return render_template('reset_password.html', email = email, code = args['c'])
 
 
-@api.resource('/password/reset', endpoint='reset_password')
+@api.resource('/password/reset', endpoint = 'reset_password')
 class ResetPassword(Resource):
     def post(self):
         parser = reqparse.RequestParser()
